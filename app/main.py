@@ -1,8 +1,7 @@
 from fastapi import FastAPI
 from app.database import engine, Base
-from app.models import db_models
+from app.models import db_models   # ye line zaroori hai
 
-# Ye line file/tables ko actually create karti hai
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="GetScry API")
