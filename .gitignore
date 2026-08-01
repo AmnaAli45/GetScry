@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environment
+venv/
+env/
+ENV/
+.venv/
+
+# Environment variables (secrets, DB passwords, API keys)
+.env
+.env.local
+
+# Database
+*.db
+*.sqlite3
+
+# ML models and data
+*.pkl
+*.joblib
+*.h5
+*.model
+data/
+datasets/
+*.csv
+
+
+
+# VS Code
+.vscode/
+
+
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+
+# FastAPI / Uvicorn
+*.pid
+
+
+
+
