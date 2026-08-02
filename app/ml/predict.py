@@ -70,6 +70,7 @@ def calculate_intent_score(
     }
 
     input_df = pd.DataFrame([raw])
+    print(input_df.T)
 
     # Step 3: Exactly wahi one-hot encoding jo training mein hui thi
     input_df = pd.get_dummies(input_df, columns=["Month", "VisitorType"], drop_first=True)
