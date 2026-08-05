@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GetScry Dashboard</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  body { background: #0f1117; color: #e6e6e9; }
+  .sidebar {
+    background: #14151c;
+    min-height: 100vh;
+    border-right: 1px solid #23242e;
+    padding: 1.25rem 0.9rem;
+  }
+  .sidebar .brand { font-weight: 700; font-size: 1.1rem; color: #fff; padding: 0 0.5rem 1.25rem; }
+  .sidebar .nav-link {
+    color: #9a9ba5;
+    font-size: 0.88rem;
+    padding: 0.55rem 0.7rem;
+    border-radius: 6px;
+    margin-bottom: 2px;
+  }
+  .sidebar .nav-link.active { background: #1f2937; color: #fff; }
+  .sidebar .nav-link:hover { color: #fff; }
+
+  .topbar { padding: 1.25rem 1.75rem 0; }
+  .content { padding: 0 1.75rem 2rem; }
+
+  .card-dark {
+    background: #171923;
+    border: 1px solid #23242e;
+    border-radius: 10px;
+  }
+
+  .stat-label { color: #8b8c98; font-size: 0.78rem; }
+  .stat-value { font-size: 1.6rem; font-weight: 700; color: #fff; }
+  .stat-value.green { color: #34d399; }
+  .stat-value.amber { color: #f5b942; }
+
+  .table-dark-custom {
+    --bs-table-bg: transparent;
+    --bs-table-color: #e6e6e9;
+    --bs-table-border-color: #23242e;
+  }
+  .table-dark-custom thead th {
+    color: #8b8c98;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    font-weight: 500;
+    border-bottom: 1px solid #23242e;
+  }
+
+  .badge-tier-high { background: #16332a; color: #34d399; }
+  .badge-tier-medium { background: #3a2f16; color: #f5b942; }
+  .badge-tier-low { background: #262733; color: #8b8c98; }
+
+  .reason-chip {
+    display: inline-block;
+    background: #1f2130;
+    color: #b7b8c4;
+    font-size: 0.72rem;
+    padding: 0.2rem 0.55rem;
+    border-radius: 20px;
+    margin: 0.1rem 0.2rem 0.1rem 0;
+  }
+
+  code { color: #9db4ff; }
+</style>
+</head>
+<body>
+
+<div class="d-flex">
+
+  <div class="sidebar" style="width: 220px;">
+    <div class="brand">GetScry</div>
+    <nav class="nav flex-column">
+      <a class="nav-link active" href="/dashboard">Overview</a>
+      <a class="nav-link" href="#">Visitors</a>
+      <a class="nav-link" href="#">Analytics</a>
+      <a class="nav-link" href="#">Settings</a>
+    </nav>
+  </div>
+
+  <div class="flex-grow-1">
+
+    <div class="topbar">
+      <h5 class="mb-1">Welcome back 👋</h5>
+      <p class="text-secondary small">Here's what's happening with your visitors today.</p>
+    </div>
+
+    <div class="content">
+
+      <div class="row g-3 mb-4">
+        <div class="col-md-3 col-6">
+          <div class="card-dark p-3">
+            <div class="stat-label mb-1">Total Visitors</div>
+            <div class="stat-value">{{ total_visitors }}</div>
+          </div>
+        </div>
+        <div class="col-md-3 col-6">
+          <div class="card-dark p-3">
+            <div class="stat-label mb-1">High Intent</div>
+            <div class="stat-value green">{{ high_intent_count }}</div>
+          </div>
+        </div>
+        <div class="col-md-3 col-6">
+          <div class="card-dark p-3">
+            <div class="stat-label mb-1">Medium Intent</div>
+            <div class="stat-value amber">{{ medium_intent_count }}</div>
+          </div>
+        </div>
+        <div class="col-md-3 col-6">
+          <div class="card-dark p-3">
+            <div class="stat-label mb-1">Avg. Score</div>
+            <div class="stat-value">{{ avg_score }}%</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="row g-3 mb-4">
+        <div class="col-lg-8">
+          <div class="card-dark p-3">
+            <div class="d-flex justify-content-between mb-2">
+              <span class="fw-semibold small">Intent Score Trend</span>
+              <span class="text-secondary small">Last 12 sessions</span>
+            </div>
+            <canvas id="trendChart" height="90"></canvas>
+          </div>
+        </div>
+        <div class="col-lg-4">
+          <div class="card-dark p-3">
+            <div class="fw-semibold small mb-2">Tier Breakdown</div>
+            <canvas id="tierChart" height="180"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <div class="card-dark">
+        <div class="d-flex justify-content-between align-items-center p-3 border-bottom" style="border-color:#23242e;">
+          <span class="fw-semibold small">Visitor Sessions</span>
+          <span class="text-secondary small">Sorted by intent score</span>
+        </div>
+
+        {% if visitors|length == 0 %}
+        <div class="text-center text-secondary py-5">
+          <p class="mb-1">No visitors tracked yet.</p>
+          <small>Send a POST request to <code>/track</code> to see data here.</small>
+        </div>
+        {% else %}
+        <div class="table-responsive">
+          <table class="table table-dark-custom align-middle mb-0">
+            <thead>
+              <tr>
+                <th>Session</th>
+                <th class="text-end">Pages</th>
+                <th class="text-end">Duration</th>
+                <th>Score</th>
+                <th>Tier</th>
+                <th>Why (top reasons)</th>
+                <th>Last Seen</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for v in visitors %}
+              {% set badge_class = 'badge-tier-high' if v.tier == 'high' else ('badge-tier-medium' if v.tier == 'medium' else 'badge-tier-low') %}
+              <tr>
+                <td><code>{{ v.session_id }}</code></td>
+                <td class="text-end">{{ v.total_pages }}</td>
+                <td class="text-end">{{ v.total_duration }}s</td>
+                <td class="fw-semibold">{{ v.intent_score }}%</td>
+                <td><span class="badge {{ badge_class }}">{{ v.tier|capitalize }}</span></td>
+                <td>
+                  {% for r in v.reasons %}
+                    <span class="reason-chip">{{ r }}</span>
+                  {% else %}
+                    <span class="text-secondary small">—</span>
+                  {% endfor %}
+                </td>
+                <td class="text-secondary small">{{ v.created_at }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% endif %}
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+  const trendLabels = {{ trend_labels | safe }};
+  const trendScores = {{ trend_scores | safe }};
+
+  new Chart(document.getElementById('trendChart'), {
+    type: 'line',
+    data: {
+      labels: trendLabels,
+      datasets: [{
+        label: 'Intent Score',
+        data: trendScores,
+        borderColor: '#34d399',
+        backgroundColor: 'rgba(52,211,153,0.08)',
+        fill: true,
+        tension: 0.35,
+        pointRadius: 3,
+      }]
+    },
+    options: {
+      plugins: { legend: { display: false } },
+      scales: {
+        y: { min: 0, max: 100, grid: { color: '#23242e' }, ticks: { color: '#8b8c98' } },
+        x: { grid: { display: false }, ticks: { color: '#8b8c98' } }
+      }
+    }
+  });
+
+  new Chart(document.getElementById('tierChart'), {
+    type: 'doughnut',
+    data: {
+      labels: ['High', 'Medium', 'Low'],
+      datasets: [{
+        data: [{{ high_intent_count }}, {{ medium_intent_count }}, {{ low_intent_count }}],
+        backgroundColor: ['#34d399', '#f5b942', '#4a5570'],
+        borderWidth: 0,
+      }]
+    },
+    options: {
+      plugins: { legend: { position: 'bottom', labels: { color: '#b7b8c4', font: { size: 11 } } } }
+    }
+  });
+</script>
+
+</body>
+</html>
