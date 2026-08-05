@@ -1,6 +1,7 @@
 import pickle
 import json
 import pandas as pd
+import shap
 import os
 
 BASE_DIR = os.path.dirname(__file__)
@@ -9,7 +10,6 @@ CONFIG_PATH = os.path.join(BASE_DIR, "model_config.json")
 FEATURES_PATH = os.path.join(BASE_DIR, "feature_columns.json")
 PCA_PATH = os.path.join(BASE_DIR, "pca_transformer.pkl")
 
-# Sab kuch ek baar load karein (app start hone par)
 with open(MODEL_PATH, "rb") as f:
     model = pickle.load(f)
 
@@ -23,33 +23,47 @@ with open(FEATURES_PATH, "r") as f:
 with open(PCA_PATH, "rb") as f:
     pca = pickle.load(f)
 
+# SHAP explainer - model se seedha banaya ja sakta hai, alag se save karne ki zaroorat nahi
+explainer = shap.TreeExplainer(model)
 
-def calculate_intent_score(
-    administrative: int,
-    administrative_duration: float,
-    informational: int,
-    informational_duration: float,
-    product_pages: int,          # ProductRelated
-    product_duration: float,     # ProductRelated_Duration
-    bounce_rates: float,
-    exit_rates: float,
-    page_values: float,
-    special_day: float,
-    operating_systems: int,
-    browser: int,
-    region: int,
-    traffic_type: int,
-    weekend: bool,
-    month: str,          # "Feb", "Mar", "May", "June", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
-    visitor_type: str,   # "Returning_Visitor", "New_Visitor", "Other"
-) -> float:
+# Feature names ko readable labels mein map karein (dashboard pe dikhane ke liye)
+FRIENDLY_NAMES = {
+    "PageValues": "High-value page views",
+    "ExitRates": "Exit rate",
+    "BounceRates": "Bounce rate",
+    "ProductEngagementPCA": "Product browsing engagement",
+    "Administrative": "Admin pages viewed",
+    "Administrative_Duration": "Time on admin pages",
+    "Informational": "Informational pages viewed",
+    "Informational_Duration": "Time on informational pages",
+    "SpecialDay": "Proximity to special day",
+    "Weekend": "Weekend visit",
+}
 
-    # Step 1: PCA transform (exact wahi fitted PCA use karein, naya fit NAHI karna)
-    product_engagement_pca = pca.transform(
-        [[product_pages, product_duration]]
-    )[0][0]
 
-    # Step 2: Raw row banayein (baaki features ke sath)
+def _friendly(feature_name: str) -> str:
+    if feature_name in FRIENDLY_NAMES:
+        return FRIENDLY_NAMES[feature_name]
+    if feature_name.startswith("Month_"):
+        return f"Visited in {feature_name.replace('Month_', '')}"
+    if feature_name.startswith("VisitorType_"):
+        return feature_name.replace("VisitorType_", "").replace("_", " ")
+    return feature_name
+
+
+def _build_input_df(
+    administrative, administrative_duration, informational, informational_duration,
+    product_pages, product_duration, bounce_rates, exit_rates, page_values,
+    special_day, operating_systems, browser, region, traffic_type,
+    weekend, month, visitor_type,
+) -> pd.DataFrame:
+
+    product_df = pd.DataFrame(
+        [[product_pages, product_duration]],
+        columns=["ProductRelated", "ProductRelated_Duration"]
+    )
+    product_engagement_pca = pca.transform(product_df)[0][0]
+
     raw = {
         "Administrative": administrative,
         "Administrative_Duration": administrative_duration,
@@ -70,23 +84,39 @@ def calculate_intent_score(
     }
 
     input_df = pd.DataFrame([raw])
-    print(input_df.T)
-
-    # Step 3: Exactly wahi one-hot encoding jo training mein hui thi
     input_df = pd.get_dummies(input_df, columns=["Month", "VisitorType"], drop_first=True)
-
-    # Step 4: Training ke exact columns/order ke sath align karein
     input_df = input_df.reindex(columns=FEATURE_COLUMNS, fill_value=0)
+    return input_df
 
+
+def calculate_intent_score(**kwargs) -> float:
+    input_df = _build_input_df(**kwargs)
     probability = model.predict_proba(input_df)[:, 1][0]
     return round(float(probability) * 100, 2)
 
 
+def get_top_reasons(top_n: int = 3, **kwargs) -> list:
+    """SHAP se top N reasons nikalta hai jo score ko sabse zyada badha rahe hain."""
+    input_df = _build_input_df(**kwargs)
+    shap_values = explainer.shap_values(input_df)[0]
+
+    feature_impact = list(zip(FEATURE_COLUMNS, shap_values))
+    # Sirf POSITIVE impact wale features lein (jo score ko badha rahe hain), sabse bara impact pehle
+    positive_impact = [f for f in feature_impact if f[1] > 0]
+    positive_impact.sort(key=lambda x: x[1], reverse=True)
+
+    reasons = [_friendly(name) for name, _ in positive_impact[:top_n]]
+    return reasons
+
+
 def predict_purchase(**kwargs) -> dict:
-    score = calculate_intent_score(**kwargs)
+    score_kwargs = {k: v for k, v in kwargs.items()}
+    score = calculate_intent_score(**score_kwargs)
+    reasons = get_top_reasons(**score_kwargs)
     is_likely_buyer = (score / 100) >= THRESHOLD
     return {
         "intent_score": score,
+        "reasons": reasons,
         "will_purchase": bool(is_likely_buyer),
         "threshold_used": THRESHOLD
     }
